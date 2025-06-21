@@ -12,7 +12,7 @@ class Setup(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def set(self, ctx, role: discord.Role = None):
         guild_id = str(ctx.guild.id)
@@ -42,7 +42,7 @@ class Setup(commands.Cog):
 
         await ctx.message.reply(f"✅ The prisoner role has been set to: **{role.name}**.")
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def mod(self, ctx, channel: discord.TextChannel):
         server_data = settings_collection.find_one({"guild_id": str(ctx.guild.id)})
@@ -58,6 +58,7 @@ class Setup(commands.Cog):
             upsert=True
         )
         await ctx.message.reply(f"✅ The moderation log channel has been set to {channel.mention}")
+
 
 async def setup(bot):
     await bot.add_cog(Setup(bot))
