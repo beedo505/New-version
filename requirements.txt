@@ -1,6 +1,5 @@
 # discord.py v2+, pymongo, dnspython, python-dotenv
 
-# محتوى requirements.txt:
 # discord.py>=2.3.2
 # pymongo
 # dnspython
