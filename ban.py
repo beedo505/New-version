@@ -10,9 +10,9 @@ class Ban(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(aliases=['افتح', 'اغرق', 'برا', 'افتحك', 'اشخطك', 'انهي'])
+    @commands.command(aliases=[# Define alternative names (aliases) for your commands here])
     @commands.has_permissions(ban_members=True)
-    async def زوطلي(self, ctx, user: discord.User = None, *, reason="No reason"):
+    async def ban(self, ctx, user: discord.User = None, *, reason="No reason"):
         if user is None:
             embed = discord.Embed(title="📝 أمر الباند", color=0x2f3136)
             embed.add_field(name="📌 معلومات الأمر", value="• الأمر: -زوطلي\n• الوظيفة: باند للعضو", inline=False)
@@ -46,7 +46,7 @@ class Ban(commands.Cog):
 
     @commands.command(aliases=['unban', 'un'])
     @commands.has_permissions(ban_members=True)
-    async def فك(self, ctx, *, user_input=None):
+    async def unban(self, ctx, *, user_input=None):
         if user_input is None:
             await ctx.reply("Please mention the user or their ID to unban.")
             return
