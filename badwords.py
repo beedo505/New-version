@@ -74,5 +74,6 @@ class BadWords(commands.Cog):
     async def pbad(self, ctx):
         await ctx.message.reply("🔧 Manage Offensive Words:", view=BadWordsView())
 
+
 async def setup(bot):
     await bot.add_cog(BadWords(bot))
