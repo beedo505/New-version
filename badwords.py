@@ -32,7 +32,7 @@ class BadWords(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def abad(self, ctx, *, words: str):
         word_list = [word.strip().lower() for word in words.split(",")]
@@ -46,7 +46,7 @@ class BadWords(commands.Cog):
         else:
             await ctx.message.reply("⚠ All words are already saved!")
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def rbad(self, ctx, *, words: str):
         word_list = [word.strip().lower() for word in words.split(",")]
@@ -60,7 +60,7 @@ class BadWords(commands.Cog):
         else:
             await ctx.message.reply("⚠️ None of the provided words were found in the database!")
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def lbad(self, ctx):
         words = [word["word"] for word in offensive_words_collection.find({"server_id": ctx.guild.id}, {"_id": 0, "word": 1})]
@@ -69,7 +69,7 @@ class BadWords(commands.Cog):
         else:
             await ctx.message.reply("✅ No offensive words in the database!")
 
-    @commands.command()
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(administrator=True)
     async def pbad(self, ctx):
         await ctx.message.reply("🔧 Manage Offensive Words:", view=BadWordsView())
