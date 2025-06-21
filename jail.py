@@ -17,7 +17,7 @@ class Jail(commands.Cog):
 
     @commands.command(aliases=[# Define alternative names (aliases) for your commands here])
     @commands.has_permissions(administrator=True)
-    async def سجن(self, ctx, member: discord.Member = None, duration: str = None, *, reason: str = None):
+    async def jail(self, ctx, member: discord.Member = None, duration: str = None, *, reason: str = None):
         guild = ctx.guild
         server_data = guilds_collection.find_one({"guild_id": str(guild.id)})
 
