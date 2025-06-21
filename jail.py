@@ -15,7 +15,7 @@ class Jail(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(aliases=['كوي', 'عدس', 'ارمي', 'اشخط', 'احبس', 'حبس'])
+    @commands.command(aliases=[# Define alternative names (aliases) for your commands here])
     @commands.has_permissions(administrator=True)
     async def سجن(self, ctx, member: discord.Member = None, duration: str = None, *, reason: str = None):
         guild = ctx.guild
