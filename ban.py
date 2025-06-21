@@ -10,9 +10,9 @@ class Ban(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(aliases=[# Define alternative names (aliases) for your commands here])
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(ban_members=True)
-    async def ban(self, ctx, user: discord.User = None, *, reason="No reason"):
+    async def حظر(self, ctx, user: discord.User = None, *, reason="No reason"):
         if user is None:
             embed = discord.Embed(title="📝 أمر الباند", color=0x2f3136)
             embed.add_field(name="📌 معلومات الأمر", value="• الأمر: -زوطلي\n• الوظيفة: باند للعضو", inline=False)
@@ -44,9 +44,9 @@ class Ban(commands.Cog):
         except discord.HTTPException as e:
             await ctx.message.reply(f"An error occurred while trying to ban the user: {e}")
 
-    @commands.command(aliases=['unban', 'un'])
+    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
     @commands.has_permissions(ban_members=True)
-    async def unban(self, ctx, *, user_input=None):
+    async def فك(self, ctx, *, user_input=None):
         if user_input is None:
             await ctx.reply("Please mention the user or their ID to unban.")
             return
@@ -95,6 +95,7 @@ class Ban(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.reply(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(Ban(bot))
