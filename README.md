@@ -1,15 +1,16 @@
 # Discord Jail Bot – by badr
 
-## Features
-- Jail members manually or automatically
-- Auto-release after timeout
-- Offensive word detection and punishment
-- Full MongoDB data persistence
+## 💡 Features
+- Jail members manually or automatically (auto jail for offensive words or spam)
+- Auto-release after a specific duration
+- Offensive word detection and automatic punishment
+- Full MongoDB data persistence for roles and jail info
 - Interactive bad words manager (with buttons)
 - Ban system for users inside or outside the server
 
-## Setup Instructions
-1. Install requirements:
+## ⚙️ Setup Instructions
+
+### 1️⃣ Install requirements
 ```bash
 pip install -r requirements.txt
 ```
