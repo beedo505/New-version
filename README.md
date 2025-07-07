@@ -14,12 +14,12 @@
 ```bash
 pip install -r requirements.txt
 ```
-2. Create `.env` file:
+### 2️⃣ Create `.env` file:
 ```env
 DISCORD_TOKEN=your_token
 MONGODB_URI=your_mongodb_url
 ```
-3. Run the bot:
+### 3️⃣ Run the bot:
 ```bash
 python bot.py
 ```
