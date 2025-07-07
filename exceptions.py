@@ -1,11 +1,8 @@
 import discord
 from discord.ext import commands
-from pymongo import MongoClient
+from db import collection, guilds_collection, settings_collection
+from db import db
 import os
-
-client = MongoClient(os.getenv("MONGODB_URI"))
-db = client["Prison"]
-guilds_collection = db["guilds"]
 
 class ExceptionManager:
     def __init__(self, db):
@@ -44,7 +41,7 @@ class Exceptions(commands.Cog):
         self.bot = bot
         self.manager = ExceptionManager(db)
 
-    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
+    @commands.command()
     @commands.has_permissions(administrator=True)
     async def add(self, ctx, *, channel=None):
         guild_id = str(ctx.guild.id)
@@ -64,7 +61,7 @@ class Exceptions(commands.Cog):
         self.manager.add_exception(guild_id, str(channel_to_add.id))
         await ctx.message.reply(f"✅ Channel {channel_to_add.name} has been added to exceptions.")
 
-    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
+    @commands.command()
     @commands.has_permissions(administrator=True)
     async def rem(self, ctx, *, channel=None):
         guild_id = str(ctx.guild.id)
@@ -85,7 +82,7 @@ class Exceptions(commands.Cog):
         await channel_to_remove.set_permissions(ctx.guild.default_role, view_channel=False)
         await ctx.message.reply(f"✅ Channel {channel_to_remove.mention} has been removed from exceptions.")
 
-    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
+    @commands.command()
     @commands.has_permissions(administrator=True)
     async def list(self, ctx):
         guild_id = str(ctx.guild.id)
