@@ -1,16 +1,16 @@
 import discord
 from discord.ext import commands
-from pymongo import MongoClient
+from db import collection, guilds_collection, settings_collection
 import os
-
-client = MongoClient(os.getenv("MONGODB_URI"))
-db = client["Prison"]
 
 class Ban(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
+    @commands.command(aliases=[
+        # ✨ Add your own aliases here
+        # Example: "حبس", "احبس",
+    ])
     @commands.has_permissions(ban_members=True)
     async def حظر(self, ctx, user: discord.User = None, *, reason="No reason"):
         if user is None:
@@ -44,7 +44,10 @@ class Ban(commands.Cog):
         except discord.HTTPException as e:
             await ctx.message.reply(f"An error occurred while trying to ban the user: {e}")
 
-    @commands.command(aliases=[""" Define alternative names (aliases) for your commands here """])
+    @commands.command(aliases=[
+        # ✨ Add your own aliases here
+        # Example: "حبس", "احبس",
+    ])
     @commands.has_permissions(ban_members=True)
     async def فك(self, ctx, *, user_input=None):
         if user_input is None:
