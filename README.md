@@ -55,4 +55,4 @@ python bot.py
 
 ## 🆘 Support
 
-For any issues or setup help, contact at discord: `1_i6`
+Need help or have issues? Contact me on Discord: 1_i6
