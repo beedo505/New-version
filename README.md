@@ -1,3 +1,6 @@
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![License](https://img.shields.io/badge/License-Private-important)
+
 # Discord Jail Bot – by badr
 
 ## 💡 Features
@@ -22,10 +25,11 @@
 
   ## 🛠️ Commands Overview
 
-- `/jail [user] [duration] [reason]`: Jail a user manually with optional duration and reason.
-- `/unjail [user]`: Release a jailed user.
-- `/badwords`: Manage offensive words list interactively.
-- `/ban [user] [reason]`: Ban a user from the server.
+- `-jail [user] [duration] [reason]`: Jail a user manually with optional duration and reason.
+- `-unjail [user]`: Release a jailed user.
+- `-badwords`: Manage offensive words list interactively.
+- `-ban [user] [reason]`: Ban a user from the server.
+- `-unban [user]`: Unban a user from the server using their ID.
 
 ## ⚙️ Setup Instructions
 
