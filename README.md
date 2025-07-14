@@ -37,7 +37,7 @@
 - `-set [role]`: Set the prisoner role for the server. Members with this role will have their channel access restricted automatically.
 - `-mod [channel]`: Set the moderation log channel. If no channel is provided, uses the current channel.
 
-### ⚔️ Ban Commands (File: `ban.py` or included in `jail.py`)
+### ⚔️ Ban Commands (File: `ban.py`)
 
 - `-ban [user] [reason]`: Ban a user from the server.
 - `-unban [user]`: Unban a user from the server using their ID.
