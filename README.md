@@ -23,16 +23,42 @@
 - **Ban system**
   Ban users inside or even if they left the server.
 
-  ## 🛠️ Commands Overview
+## 🛠️ Commands Overview
+
+### 🔒 Jail Commands (File: `jail.py`)
 
 - `-jail [user] [duration] [reason]`: Jail a user manually with optional duration and reason.
 - `-unjail [user]`: Release a jailed user.
-- `-badwords`: Manage offensive words list interactively.
+- `-jailed`: List all currently jailed members with their release times.
+- `-how`: Check your remaining jail time and release information.
+
+### 🏷️ Setup Commands (File: `setup.py`)
+
+- `-set [role]`: Set the prisoner role for the server. Members with this role will have their channel access restricted automatically.
+- `-mod [channel]`: Set the moderation log channel. If no channel is provided, uses the current channel.
+
+### ⚔️ Ban Commands (File: `ban.py` or included in `jail.py`)
+
 - `-ban [user] [reason]`: Ban a user from the server.
 - `-unban [user]`: Unban a user from the server using their ID.
-- `-how`: Check your remaining jail time and release information.
-- `-jailed`: List all currently jailed members with their release times.
+- `-set_bc [channel]`: Set the ban release notification channel. If no channel is provided, it uses the current channel.
 
+### 🚫 Offensive Words Commands (File: `badwords.py`)
+
+- `-abad word1, word2, ...`: Add one or more words to the offensive words list.
+- `-rbad word1, word2, ...`: Remove one or more words from the offensive words list.
+- `-lbad`: List all offensive words currently in the database.
+- `-badwords`: Show an interactive menu to manage offensive words.
+
+### 📌 Exception Channels Commands (File: `exceptions.py`)
+
+- `-add [channel]`: Add a channel to the exceptions list, allowing prisoners to view and access it. If no channel is provided, uses the current channel.
+- `-rem [channel]`: Remove a channel from the exceptions list and hide it from prisoners. If no channel is provided, uses the current channel.
+- `-list` or `-show_exp`: Show all channels currently in the exceptions list.
+
+### ⚙️ Automatic System (File: `core.py`)
+
+- Automatically detects spam and offensive words, and jails or times out users without manual commands.
 
 ## ⚙️ Setup Instructions
 
