@@ -30,6 +30,9 @@
 - `-badwords`: Manage offensive words list interactively.
 - `-ban [user] [reason]`: Ban a user from the server.
 - `-unban [user]`: Unban a user from the server using their ID.
+- `-how`: Check your remaining jail time and release information.
+- `-jailed`: List all currently jailed members with their release times.
+
 
 ## ⚙️ Setup Instructions
 
