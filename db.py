@@ -1,20 +1,63 @@
-from pymongo import MongoClient, errors
 import os
 
-uri = os.getenv("MONGO_URI")
-db_name = os.getenv("DB_NAME", "Prison")
+from pymongo import MongoClient, errors
+from dotenv import load_dotenv
 
-client = MongoClient(uri, tlsAllowInvalidCertificates=True)
 
-db = client[db_name]
+load_dotenv()
+
+
+# =========================
+# Environment Variables
+# =========================
+
+MONGO_URI = os.getenv("MONGO_URI")
+DB_NAME = os.getenv("DB_NAME", "Prison")
+
+
+if not MONGO_URI:
+    raise RuntimeError(
+        "❌ MONGO_URI is missing. "
+        "Please add it to your .env file or hosting environment variables."
+    )
+
+
+# =========================
+# MongoDB Connection
+# =========================
+
+try:
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=10000
+    )
+
+    client.admin.command("ping")
+
+    print(
+        f"✅ You successfully connected to MongoDB! "
+        f"Database: {DB_NAME}"
+    )
+
+except errors.PyMongoError as e:
+    raise RuntimeError(
+        f"❌ Failed to connect to MongoDB: {e}"
+    ) from e
+
+
+# =========================
+# Database
+# =========================
+
+db = client[DB_NAME]
+
+
+# =========================
+# Collections
+# =========================
+
 collection = db["user"]
-exceptions_collection = db['exceptions']
+exceptions_collection = db["exceptions"]
 guilds_collection = db["guilds"]
 offensive_words_collection = db["offensive_words"]
 settings_collection = db["settings"]
-
-try:
-  client.admin.command("ping")
-  print(f"✅ You successfully connected to MongoDB! Database: {db_name}")
-except Exception as e:
-  print(e)
