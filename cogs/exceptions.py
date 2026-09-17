@@ -10,7 +10,7 @@ class ExceptionManager:
 
     def get_exceptions(self, guild_id):
         server_data = self.collection.find_one(
-            {"guild_id": guild_id},
+            {"guild_id": str(guild_id)},
             {"exception_channels": 1}
         )
 
@@ -22,10 +22,10 @@ class ExceptionManager:
 
     def add_exception(self, guild_id, channel_id):
         result = self.collection.update_one(
-            {"guild_id": guild_id},
+            {"guild_id": str(guild_id)},
             {
                 "$addToSet": {
-                    "exception_channels": channel_id
+                    "exception_channels": str(channel_id)
                 }
             },
             upsert=True
@@ -38,10 +38,10 @@ class ExceptionManager:
 
     def remove_exception(self, guild_id, channel_id):
         result = self.collection.update_one(
-            {"guild_id": guild_id},
+            {"guild_id": str(guild_id)},
             {
                 "$pull": {
-                    "exception_channels": channel_id
+                    "exception_channels": str(channel_id)
                 }
             }
         )
@@ -54,44 +54,132 @@ class Exceptions(commands.Cog):
         self.bot = bot
         self.manager = ExceptionManager(db)
 
+    async def get_prisoner_role(self, guild):
+        server_data = self.manager.collection.find_one(
+            {"guild_id": str(guild.id)},
+            {"prisoner_role_id": 1}
+        )
+
+        if not server_data:
+            return None
+
+        prisoner_role_id = server_data.get(
+            "prisoner_role_id"
+        )
+
+        if not prisoner_role_id:
+            return None
+
+        try:
+            return guild.get_role(
+                int(prisoner_role_id)
+            )
+        except (TypeError, ValueError):
+            return None
+
     @commands.command()
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def add(
         self,
         ctx,
+        *,
         channel: discord.abc.GuildChannel = None
     ):
-        guild_id = str(ctx.guild.id)
+        guild = ctx.guild
 
         if channel is None:
+            channel_to_add = ctx.channel
+        else:
+            channel_to_add = channel
+
+        prisoner_role = await self.get_prisoner_role(
+            guild
+        )
+
+        if prisoner_role is None:
             await ctx.message.reply(
-                "❌ Please mention a valid channel.\n"
-                "Example: `-add #prison`"
+                "⚠️ The Prisoner role has not been configured yet.\n"
+                "Use `-set @Prisoner` first."
             )
             return
 
-        if channel.guild.id != ctx.guild.id:
+        if not guild.me.guild_permissions.manage_roles:
             await ctx.message.reply(
-                "❌ You can only add channels from this server."
+                "❌ I need the **Manage Roles** permission."
             )
             return
 
+        if prisoner_role >= guild.me.top_role:
+            await ctx.message.reply(
+                "❌ I cannot modify the Prisoner role because "
+                "it is equal to or higher than my highest role."
+            )
+            return
+
+        exceptions = self.manager.get_exceptions(
+            guild.id
+        )
+
+        if str(channel_to_add.id) in {
+            str(channel_id)
+            for channel_id in exceptions
+        }:
+            await ctx.message.reply(
+                f"⚠️ {channel_to_add.mention} "
+                "is already in the exceptions list."
+            )
+            return
+
+        # Save to MongoDB first.
         added = self.manager.add_exception(
-            guild_id,
-            str(channel.id)
+            guild.id,
+            channel_to_add.id
         )
 
         if not added:
             await ctx.message.reply(
-                f"⚠️ Channel {channel.mention} is already "
-                f"in the exceptions list."
+                f"⚠️ {channel_to_add.mention} "
+                "is already in the exceptions list."
+            )
+            return
+
+        # Make the channel visible to prisoners.
+        try:
+            await channel_to_add.set_permissions(
+                prisoner_role,
+                view_channel=True
+            )
+
+        except discord.Forbidden:
+            # Roll back DB if Discord permission update fails.
+            self.manager.remove_exception(
+                guild.id,
+                channel_to_add.id
+            )
+
+            await ctx.message.reply(
+                "❌ I don't have permission to modify "
+                f"{channel_to_add.mention}."
+            )
+            return
+
+        except discord.HTTPException as e:
+            # Roll back DB if Discord returns an error.
+            self.manager.remove_exception(
+                guild.id,
+                channel_to_add.id
+            )
+
+            await ctx.message.reply(
+                f"❌ Discord returned an error: `{e}`"
             )
             return
 
         await ctx.message.reply(
-            f"✅ Channel {channel.mention} has been added "
-            f"to exceptions."
+            f"✅ {channel_to_add.mention} "
+            "has been added to the exceptions list.\n"
+            "👁️ Prisoners can now see this channel."
         )
 
     @commands.command()
@@ -100,51 +188,112 @@ class Exceptions(commands.Cog):
     async def rem(
         self,
         ctx,
+        *,
         channel: discord.abc.GuildChannel = None
     ):
-        guild_id = str(ctx.guild.id)
+        guild = ctx.guild
 
         if channel is None:
+            channel_to_remove = ctx.channel
+        else:
+            channel_to_remove = channel
+
+        prisoner_role = await self.get_prisoner_role(
+            guild
+        )
+
+        if prisoner_role is None:
             await ctx.message.reply(
-                "❌ Please mention a valid channel.\n"
-                "Example: `-rem #prison`"
+                "⚠️ The Prisoner role has not been configured yet.\n"
+                "Use `-set @Prisoner` first."
             )
             return
 
-        if channel.guild.id != ctx.guild.id:
+        if not guild.me.guild_permissions.manage_roles:
             await ctx.message.reply(
-                "❌ You can only remove channels from this server."
+                "❌ I need the **Manage Roles** permission."
             )
             return
 
+        exceptions = self.manager.get_exceptions(
+            guild.id
+        )
+
+        if str(channel_to_remove.id) not in {
+            str(channel_id)
+            for channel_id in exceptions
+        }:
+            await ctx.message.reply(
+                f"⚠️ {channel_to_remove.mention} "
+                "is not in the exceptions list."
+            )
+            return
+
+        # Remove from MongoDB.
         removed = self.manager.remove_exception(
-            guild_id,
-            str(channel.id)
+            guild.id,
+            channel_to_remove.id
         )
 
         if not removed:
             await ctx.message.reply(
-                f"⚠️ Channel {channel.mention} is not "
-                f"in the exceptions list."
+                "❌ Failed to remove the channel "
+                "from the exceptions list."
+            )
+            return
+
+        # Hide the channel from prisoners.
+        try:
+            await channel_to_remove.set_permissions(
+                prisoner_role,
+                view_channel=False
+            )
+
+        except discord.Forbidden:
+            # Try to restore the DB entry.
+            self.manager.add_exception(
+                guild.id,
+                channel_to_remove.id
+            )
+
+            await ctx.message.reply(
+                "❌ I don't have permission to modify "
+                f"{channel_to_remove.mention}."
+            )
+            return
+
+        except discord.HTTPException as e:
+            # Try to restore the DB entry.
+            self.manager.add_exception(
+                guild.id,
+                channel_to_remove.id
+            )
+
+            await ctx.message.reply(
+                f"❌ Discord returned an error: `{e}`"
             )
             return
 
         await ctx.message.reply(
-            f"✅ Channel {channel.mention} has been "
-            f"removed from exceptions."
+            f"✅ {channel_to_remove.mention} "
+            "has been removed from the exceptions list.\n"
+            "🔒 Prisoners can no longer see this channel."
         )
 
-    @commands.command(name="list")
+    @commands.command()
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
-    async def list_exceptions(self, ctx):
+    async def list(self, ctx):
         guild_id = str(ctx.guild.id)
 
-        exceptions = self.manager.get_exceptions(guild_id)
+        exceptions = self.manager.get_exceptions(
+            guild_id
+        )
 
         if not exceptions:
             await ctx.message.reply(
-                "⚠️ No exception channels found in this server."
+                "⚠️ No exception channels found "
+                "in this server."
             )
             return
 
@@ -159,15 +308,17 @@ class Exceptions(commands.Cog):
                 channel = None
 
             if channel:
-                if isinstance(channel, discord.VoiceChannel):
+                if isinstance(
+                    channel,
+                    discord.VoiceChannel
+                ):
                     channel_type = "🔊 Voice"
-                elif isinstance(channel, discord.CategoryChannel):
-                    channel_type = "📁 Category"
                 else:
                     channel_type = "💬 Text"
 
                 exception_channels.append(
-                    f"**{channel.mention}** ({channel_type})"
+                    f"**{channel.mention}** "
+                    f"({channel_type})"
                 )
 
         if not exception_channels:
@@ -187,7 +338,9 @@ class Exceptions(commands.Cog):
             inline=False
         )
 
-        await ctx.message.reply(embed=embed)
+        await ctx.message.reply(
+            embed=embed
+        )
 
 
 async def setup(bot):
