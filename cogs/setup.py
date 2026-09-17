@@ -428,6 +428,41 @@ class Setup(commands.Cog):
             f"{channel.mention}."
         )
 
+        # =========================================================
+    # Remove Moderation Log Channel
+    # =========================================================
+
+    @commands.command()
+    @commands.guild_only()
+    @commands.has_permissions(administrator=True)
+    async def unmod(self, ctx):
+        guild_id = str(ctx.guild.id)
+
+        server_data = await asyncio.to_thread(
+            settings_collection.find_one,
+            {"guild_id": guild_id}
+        )
+
+        if not server_data or not server_data.get("mod_log_channel_id"):
+            await ctx.message.reply(
+                "⚠️ No moderation log channel is currently configured."
+            )
+            return
+
+        await asyncio.to_thread(
+            settings_collection.update_one,
+            {"guild_id": guild_id},
+            {
+                "$unset": {
+                    "mod_log_channel_id": ""
+                }
+            }
+        )
+
+        await ctx.message.reply(
+            "✅ The moderation log channel has been removed."
+        )
+        
 
 # =========================================================
 # Extension Setup
