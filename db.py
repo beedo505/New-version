@@ -4,9 +4,6 @@ from pymongo import MongoClient, errors
 from dotenv import load_dotenv
 
 
-load_dotenv()
-
-
 # =========================
 # Environment Variables
 # =========================
