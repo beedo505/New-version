@@ -732,27 +732,24 @@ class Jail(commands.Cog):
         guild = ctx.guild
 
         server_data = guilds_collection.find_one(
-            {
-                "guild_id": str(guild.id)
-            }
+            {"guild_id": str(guild.id)}
         )
-
+        
         if not server_data:
             await ctx.message.reply(
-                "⚠️ The server is not properly configured."
+                "⚠️ The Prisoner role has not been configured yet.\n"
+                "Use `-set @Prisoner` first."
             )
             return
-
-        prisoner_role = self.get_prisoner_role(
-            guild,
-            server_data
-        )
-
-        if not prisoner_role:
-            await ctx.message.reply(
-                "⚠️ The 'Prisoner' role is not set up."
-            )
-            return
+            
+            prisoner_role = self.get_prisoner_role(guild, server_data)
+            
+            if not prisoner_role:
+                await ctx.message.reply(
+                    "⚠️ The Prisoner role has not been configured yet.\n"
+                    "Use `-set @Prisoner` first."
+                )
+                return
 
         # =====================================================
         # Pardon Everyone
