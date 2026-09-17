@@ -25,4 +25,4 @@ async def on_ready():
             except Exception as e:
                 print(f"❌ Failed to load extension {filename}: {e}")
 
-bot.run(os.getenv("Your bot token here"))
+bot.run(os.getenv("DISCORD_TOKEN"))
