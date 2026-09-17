@@ -1,8 +1,7 @@
 from pymongo import MongoClient, errors
 import os
 
-uri = "mongodb+srv://user_b:v4DXWaubyWZmnk3T@cluster0.zriaf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-
+uri = os.getenv("MONGO_URI")
 client = MongoClient(uri, tlsAllowInvalidCertificates=True)
 
 db = client["Prison"]
