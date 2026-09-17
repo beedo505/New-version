@@ -8,30 +8,72 @@ from discord.ext import commands, tasks
 from db import collection, guilds_collection
 
 
+# =========================================================
+# MongoDB helpers
+# =========================================================
+
+async def db_find_one(coll, query, projection=None):
+    return await asyncio.to_thread(
+        coll.find_one,
+        query,
+        projection
+    )
+
+
+async def db_find_many(coll, query, projection=None):
+    return await asyncio.to_thread(
+        lambda: list(coll.find(query, projection))
+    )
+
+
+async def db_update_one(coll, query, update, upsert=False):
+    return await asyncio.to_thread(
+        coll.update_one,
+        query,
+        update,
+        upsert=upsert
+    )
+
+
+async def db_delete_one(coll, query):
+    return await asyncio.to_thread(
+        coll.delete_one,
+        query
+    )
+
+
+# =========================================================
+# Jail Cog
+# =========================================================
+
 class Jail(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.release_lock = asyncio.Lock()
 
-        # Start the background task that releases expired jails.
+        # Automatically release expired prisoners.
         self.release_expired_jails.start()
 
     def cog_unload(self):
         self.release_expired_jails.cancel()
 
-    # =========================================================
+    # =====================================================
     # Helpers
-    # =========================================================
+    # =====================================================
 
     @staticmethod
     def parse_release_time(value):
-        """
-        Convert a stored release_time into an aware UTC datetime.
-        """
+        """Convert a stored release_time into UTC datetime."""
+
         if isinstance(value, datetime):
             release_time = value
+
         elif isinstance(value, str):
-            release_time = datetime.fromisoformat(value)
+            try:
+                release_time = datetime.fromisoformat(value)
+            except ValueError:
+                return None
+
         else:
             return None
 
@@ -44,9 +86,8 @@ class Jail(commands.Cog):
 
     @staticmethod
     def format_remaining(seconds):
-        """
-        Convert seconds into a readable jail duration.
-        """
+        """Convert seconds into a readable duration."""
+
         seconds = max(0, int(seconds))
 
         hours, remainder = divmod(seconds, 3600)
@@ -54,86 +95,117 @@ class Jail(commands.Cog):
 
         return f"{hours}h {minutes}m {seconds}s"
 
-    def get_prisoner_role(self, guild, server_data):
-        """
-        Get the configured Prisoner role.
-        """
+    @staticmethod
+    def get_prisoner_role(guild, server_data):
+        """Get the configured Prisoner role safely."""
+
         prisoner_role_id = server_data.get("prisoner_role_id")
 
         if not prisoner_role_id:
             return None
 
-        return guild.get_role(int(prisoner_role_id))
+        try:
+            return guild.get_role(int(prisoner_role_id))
+        except (TypeError, ValueError):
+            return None
 
-    # =========================================================
-    # Background Jail Release System
-    # =========================================================
+    # =====================================================
+    # Background automatic release
+    # =====================================================
 
     @tasks.loop(seconds=30)
     async def release_expired_jails(self):
-        """
-        Periodically check MongoDB for expired jail records
-        and release the corresponding members.
-        """
+        """Release prisoners whose jail time has expired."""
 
         now = datetime.now(timezone.utc)
 
-        prisoners = collection.find(
-            {},
-            {
-                "_id": 0,
-                "user_id": 1,
-                "guild_id": 1,
-                "release_time": 1,
-                "roles": 1,
-            }
-        )
+        try:
+            prisoners = await db_find_many(
+                collection,
+                {},
+                {
+                    "_id": 0,
+                    "user_id": 1,
+                    "guild_id": 1,
+                    "release_time": 1,
+                }
+            )
+        except Exception as e:
+            print(
+                f"❌ Failed to read jail records: {e}"
+            )
+            return
 
         for prisoner in prisoners:
-            release_time = self.parse_release_time(
-                prisoner.get("release_time")
-            )
+            try:
+                release_time = self.parse_release_time(
+                    prisoner.get("release_time")
+                )
 
-            if release_time is None:
-                continue
+                # Ignore invalid records.
+                if release_time is None:
+                    continue
 
-            if release_time > now:
-                continue
+                # Jail has not expired yet.
+                if release_time > now:
+                    continue
 
-            guild_id = prisoner.get("guild_id")
-            user_id = prisoner.get("user_id")
+                guild_id = prisoner.get("guild_id")
+                user_id = prisoner.get("user_id")
 
-            if guild_id is None or user_id is None:
-                continue
+                if guild_id is None or user_id is None:
+                    continue
 
-            guild = self.bot.get_guild(int(guild_id))
+                guild = self.bot.get_guild(
+                    int(guild_id)
+                )
 
-            if not guild:
-                continue
+                if guild is None:
+                    continue
 
-            member = guild.get_member(int(user_id))
+                # Try cache first.
+                member = guild.get_member(
+                    int(user_id)
+                )
 
-            if not member:
-                continue
+                # If not cached, fetch from Discord.
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(
+                            int(user_id)
+                        )
+                    except (
+                        discord.NotFound,
+                        discord.HTTPException
+                    ):
+                        # Keep the DB record.
+                        # The member may become available later.
+                        continue
 
-            await self.release_member(
-                member,
-                silent=True,
-                expected_release_time=release_time
-            )
+                await self.release_member(
+                    member,
+                    silent=True,
+                    expected_release_time=release_time
+                )
+
+            except Exception as e:
+                # One broken record must never stop the
+                # entire background release system.
+                print(
+                    f"❌ Failed to process jail record: {e}"
+                )
 
     @release_expired_jails.before_loop
     async def before_release_expired_jails(self):
         await self.bot.wait_until_ready()
 
-    # =========================================================
-    # Jail Command
-    # =========================================================
+    # =====================================================
+    # Jail command
+    # =====================================================
 
     @commands.command(
         aliases=[
             # Add your custom aliases here.
-            # Example:
             # "حبس",
             # "احبس",
             # "اشخط",
@@ -154,9 +226,9 @@ class Jail(commands.Cog):
     ):
         guild = ctx.guild
 
-        # -----------------------------------------------------
-        # Show command information
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # Command help
+        # -------------------------------------------------
 
         if member is None:
             aliases = [
@@ -196,20 +268,26 @@ class Jail(commands.Cog):
                 inline=False
             )
 
-            await ctx.message.reply(embed=embed)
+            await ctx.message.reply(
+                embed=embed
+            )
             return
 
-        # -----------------------------------------------------
-        # Server setup
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # Server configuration
+        # -------------------------------------------------
 
-        server_data = guilds_collection.find_one(
-            {"guild_id": str(guild.id)}
+        server_data = await db_find_one(
+            guilds_collection,
+            {
+                "guild_id": str(guild.id)
+            }
         )
 
         if not server_data:
             await ctx.message.reply(
-                "❌ The bot is not properly set up for this server."
+                "⚠️ The Prisoner role has not been configured yet.\n"
+                "Use `-set @Prisoner` first."
             )
             return
 
@@ -220,13 +298,41 @@ class Jail(commands.Cog):
 
         if not prisoner_role:
             await ctx.message.reply(
-                "❌ The 'Prisoner' role is not set or no longer exists."
+                "⚠️ The configured Prisoner role no longer exists.\n"
+                "Please configure a new role using "
+                "`-set @Prisoner`."
             )
             return
 
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # Bot member / role hierarchy
+        # -------------------------------------------------
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await ctx.message.reply(
+                "❌ I could not get my member information."
+            )
+            return
+
+        if prisoner_role >= bot_member.top_role:
+            await ctx.message.reply(
+                "❌ I cannot assign the Prisoner role because "
+                "it is equal to or higher than my highest role."
+            )
+            return
+
+        if not bot_member.guild_permissions.manage_roles:
+            await ctx.message.reply(
+                "❌ I need the **Manage Roles** permission "
+                "to jail members."
+            )
+            return
+
+        # -------------------------------------------------
         # Basic validation
-        # -----------------------------------------------------
+        # -------------------------------------------------
 
         if member.id == ctx.author.id:
             await ctx.message.reply(
@@ -246,16 +352,16 @@ class Jail(commands.Cog):
             )
             return
 
-        if member.top_role >= guild.me.top_role:
+        if member.top_role >= bot_member.top_role:
             await ctx.message.reply(
                 "❌ I cannot jail this member because "
                 "their role is equal to or higher than mine."
             )
             return
 
-        # -----------------------------------------------------
+        # -------------------------------------------------
         # Default values
-        # -----------------------------------------------------
+        # -------------------------------------------------
 
         if duration is None:
             duration = "8h"
@@ -263,33 +369,30 @@ class Jail(commands.Cog):
         if reason is None:
             reason = "No reason provided"
 
-        # -----------------------------------------------------
+        # -------------------------------------------------
         # Parse duration
-        # -----------------------------------------------------
+        # -------------------------------------------------
+
+        duration = duration.strip().lower()
 
         time_units = {
             "m": "minutes",
             "h": "hours",
             "d": "days",
-            "o": "days",
         }
 
-        duration = duration.strip().lower()
+        # "o" means 30 days.
+        if duration.endswith("o"):
+            unit = "o"
+            value_text = duration[:-1]
+        else:
+            unit = duration[-1] if duration else ""
+            value_text = duration[:-1]
 
-        if len(duration) < 2:
+        if unit not in time_units and unit != "o":
             await ctx.message.reply(
-                "❌ Invalid duration. "
+                "❌ Invalid duration format.\n"
                 "Use numbers followed by m, h, d, or o."
-            )
-            return
-
-        unit = duration[-1]
-        value_text = duration[:-1]
-
-        if unit not in time_units:
-            await ctx.message.reply(
-                "❌ Invalid duration format. "
-                "Use m, h, d, or o."
             )
             return
 
@@ -297,7 +400,7 @@ class Jail(commands.Cog):
             time_value = int(value_text)
         except ValueError:
             await ctx.message.reply(
-                "❌ Invalid duration. "
+                "❌ Invalid duration.\n"
                 "Use numbers followed by m, h, d, or o."
             )
             return
@@ -308,7 +411,6 @@ class Jail(commands.Cog):
             )
             return
 
-        # "o" = month (30 days)
         if unit == "o":
             delta = timedelta(
                 days=time_value * 30
@@ -320,21 +422,20 @@ class Jail(commands.Cog):
                 }
             )
 
-        # -----------------------------------------------------
+        # -------------------------------------------------
         # Calculate release time
-        # -----------------------------------------------------
+        # -------------------------------------------------
 
         now_utc = datetime.now(timezone.utc)
-
         release_time = now_utc + delta
 
-        # -----------------------------------------------------
-        # Prevent simultaneous jail/release operations
-        # -----------------------------------------------------
+        # -------------------------------------------------
+        # Jail operation lock
+        # -------------------------------------------------
 
         async with self.release_lock:
 
-            # Save the member's previous roles.
+            # Save previous roles.
             previous_roles = [
                 role.id
                 for role in member.roles
@@ -345,30 +446,86 @@ class Jail(commands.Cog):
                 )
             ]
 
+            # -------------------------------------------------
+            # Save DB record FIRST.
+            #
+            # If Discord fails afterward, we delete the
+            # record again.
+            # -------------------------------------------------
+
+            try:
+                await db_update_one(
+                    collection,
+                    {
+                        "user_id": member.id,
+                        "guild_id": guild.id
+                    },
+                    {
+                        "$set": {
+                            "roles": previous_roles,
+                            "release_time": (
+                                release_time.isoformat()
+                            ),
+                            "channel_id": ctx.channel.id,
+                        }
+                    },
+                    upsert=True
+                )
+
+            except Exception as e:
+                await ctx.message.reply(
+                    f"❌ Failed to save the jail record: `{e}`"
+                )
+                return
+
+            # -------------------------------------------------
             # Give only the Prisoner role.
-            await member.edit(
-                roles=[prisoner_role]
-            )
+            # -------------------------------------------------
 
-            # Save jail information.
-            collection.update_one(
-                {
-                    "user_id": member.id,
-                    "guild_id": guild.id,
-                },
-                {
-                    "$set": {
-                        "roles": previous_roles,
-                        "release_time": release_time.isoformat(),
-                        "channel_id": ctx.channel.id,
+            try:
+                await member.edit(
+                    roles=[prisoner_role]
+                )
+
+            except discord.Forbidden:
+                await db_delete_one(
+                    collection,
+                    {
+                        "user_id": member.id,
+                        "guild_id": guild.id,
+                        "release_time": (
+                            release_time.isoformat()
+                        )
                     }
-                },
-                upsert=True
-            )
+                )
 
-        # -----------------------------------------------------
+                await ctx.message.reply(
+                    "❌ I don't have permission to change "
+                    "this member's roles."
+                )
+                return
+
+            except discord.HTTPException as e:
+                await db_delete_one(
+                    collection,
+                    {
+                        "user_id": member.id,
+                        "guild_id": guild.id,
+                        "release_time": (
+                            release_time.isoformat()
+                        )
+                    }
+                )
+
+                await ctx.message.reply(
+                    f"❌ Discord returned an error while "
+                    f"jailing the member: `{e}`"
+                )
+                return
+
+        # -------------------------------------------------
         # Success message
-        # -----------------------------------------------------
+        # -------------------------------------------------
 
         embed = discord.Embed(
             title="تم السجن بنجاح",
@@ -389,38 +546,38 @@ class Jail(commands.Cog):
             )
         )
 
-        embed.timestamp = datetime.now(timezone.utc)
+        embed.timestamp = datetime.now(
+            timezone.utc
+        )
 
         await ctx.message.reply(
             embed=embed
         )
 
-        # IMPORTANT:
-        # There is intentionally NO asyncio.sleep() here.
-        #
-        # The background release task checks MongoDB every
-        # 30 seconds, so jail survives bot/Railway restarts.
-
-    # =========================================================
-    # Release Member
-    # =========================================================
+    # =====================================================
+    # Release member
+    # =====================================================
 
     async def release_member(
         self,
         member,
         silent=False,
-        expected_release_time=None
+        expected_release_time=None,
+        force=False
     ):
         guild = member.guild
 
         async with self.release_lock:
 
             # -------------------------------------------------
-            # Get server configuration
+            # Server configuration
             # -------------------------------------------------
 
-            server_data = guilds_collection.find_one(
-                {"guild_id": str(guild.id)}
+            server_data = await db_find_one(
+                guilds_collection,
+                {
+                    "guild_id": str(guild.id)
+                }
             )
 
             if not server_data:
@@ -435,32 +592,32 @@ class Jail(commands.Cog):
                 return False
 
             # -------------------------------------------------
-            # Get jail data
+            # Get jail record
             # -------------------------------------------------
 
-            data = collection.find_one(
+            data = await db_find_one(
+                collection,
                 {
                     "user_id": member.id,
-                    "guild_id": guild.id,
+                    "guild_id": guild.id
                 }
             )
 
             if not data:
                 return False
 
-            current_release_time = self.parse_release_time(
-                data.get("release_time")
+            current_release_time = (
+                self.parse_release_time(
+                    data.get("release_time")
+                )
             )
 
             if current_release_time is None:
                 return False
 
             # -------------------------------------------------
-            # Critical protection:
-            #
-            # If an old release operation is trying to release
-            # a member, make sure it still matches the current
-            # jail record.
+            # Prevent an old background operation from
+            # releasing a newer jail record.
             # -------------------------------------------------
 
             if expected_release_time is not None:
@@ -468,12 +625,19 @@ class Jail(commands.Cog):
                     return False
 
             # -------------------------------------------------
-            # Make sure the jail has actually expired
+            # Normal automatic release cannot happen early.
+            #
+            # force=True is used by -عفو.
             # -------------------------------------------------
 
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(
+                timezone.utc
+            )
 
-            if current_release_time > now_utc:
+            if (
+                not force
+                and current_release_time > now_utc
+            ):
                 return False
 
             # -------------------------------------------------
@@ -482,36 +646,83 @@ class Jail(commands.Cog):
 
             previous_roles = []
 
-            for role_id in data.get("roles", []):
-                role = guild.get_role(int(role_id))
+            for role_id in data.get(
+                "roles",
+                []
+            ):
+                try:
+                    role = guild.get_role(
+                        int(role_id)
+                    )
+                except (TypeError, ValueError):
+                    continue
 
-                if role and not role.managed:
+                if (
+                    role
+                    and role != guild.default_role
+                    and not role.managed
+                ):
                     previous_roles.append(role)
 
-            # Remove Prisoner role if present.
-            if prisoner_role in member.roles:
-                await member.remove_roles(
-                    prisoner_role
+            # -------------------------------------------------
+            # Restore roles in ONE Discord operation.
+            #
+            # This removes Prisoner automatically because
+            # Prisoner is not included in previous_roles.
+            # -------------------------------------------------
+
+            try:
+                await member.edit(
+                    roles=previous_roles
                 )
 
-            # Restore previous roles.
-            await member.edit(
-                roles=previous_roles
-            )
+            except discord.NotFound:
+                return False
 
-            # Delete jail record only after the member's
-            # roles have been successfully restored.
-            collection.delete_one(
-                {
-                    "user_id": member.id,
-                    "guild_id": guild.id,
-                    "release_time": data["release_time"],
-                }
-            )
+            except discord.Forbidden as e:
+                print(
+                    f"❌ Permission error releasing "
+                    f"{member.id}: {e}"
+                )
+                return False
 
-        # -----------------------------------------------------
-        # Optional release message
-        # -----------------------------------------------------
+            except discord.HTTPException as e:
+                print(
+                    f"❌ Discord error releasing "
+                    f"{member.id}: {e}"
+                )
+                return False
+
+            # -------------------------------------------------
+            # Delete DB record ONLY after Discord succeeds.
+            # -------------------------------------------------
+
+            try:
+                await db_delete_one(
+                    collection,
+                    {
+                        "user_id": member.id,
+                        "guild_id": guild.id,
+                        "release_time": data[
+                            "release_time"
+                        ]
+                    }
+                )
+
+            except Exception as e:
+                print(
+                    f"❌ Failed to delete jail record "
+                    f"for {member.id}: {e}"
+                )
+
+                # Member is already released.
+                # Keep returning False so the DB issue is visible
+                # in logs and the record can be retried.
+                return False
+
+        # -------------------------------------------------
+        # Optional DM
+        # -------------------------------------------------
 
         if not silent:
             try:
@@ -523,9 +734,9 @@ class Jail(commands.Cog):
 
         return True
 
-    # =========================================================
-    # Remaining Jail Time
-    # =========================================================
+    # =====================================================
+    # Remaining jail time
+    # =====================================================
 
     @commands.command()
     @commands.guild_only()
@@ -533,10 +744,11 @@ class Jail(commands.Cog):
 
         member = ctx.author
 
-        data = collection.find_one(
+        data = await db_find_one(
+            collection,
             {
                 "user_id": member.id,
-                "guild_id": ctx.guild.id,
+                "guild_id": ctx.guild.id
             }
         )
 
@@ -566,14 +778,15 @@ class Jail(commands.Cog):
             )
             return
 
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(
+            timezone.utc
+        )
 
         remaining = (
             release_time - now_utc
         )
 
         if remaining.total_seconds() <= 0:
-
             await ctx.reply(
                 "✅ | Your jail time has expired. "
                 "You should be released soon!",
@@ -586,11 +799,15 @@ class Jail(commands.Cog):
             )
 
             release_time_saudi = (
-                release_time.astimezone(saudi_tz)
+                release_time.astimezone(
+                    saudi_tz
+                )
             )
 
-            remaining_text = self.format_remaining(
-                remaining.total_seconds()
+            remaining_text = (
+                self.format_remaining(
+                    remaining.total_seconds()
+                )
             )
 
             release_time_str = (
@@ -614,9 +831,9 @@ class Jail(commands.Cog):
         except discord.HTTPException:
             pass
 
-    # =========================================================
-    # Currently Jailed Members
-    # =========================================================
+    # =====================================================
+    # List prisoners
+    # =====================================================
 
     @commands.command()
     @commands.guild_only()
@@ -625,7 +842,8 @@ class Jail(commands.Cog):
 
         guild = ctx.guild
 
-        prisoners_data = collection.find(
+        prisoners_data = await db_find_many(
+            collection,
             {
                 "guild_id": guild.id
             }
@@ -643,9 +861,16 @@ class Jail(commands.Cog):
 
         for prisoner in prisoners_data:
 
-            member = guild.get_member(
-                prisoner["user_id"]
-            )
+            try:
+                member = guild.get_member(
+                    int(prisoner["user_id"])
+                )
+            except (
+                KeyError,
+                TypeError,
+                ValueError
+            ):
+                member = None
 
             release_time = self.parse_release_time(
                 prisoner.get("release_time")
@@ -708,16 +933,15 @@ class Jail(commands.Cog):
         except discord.HTTPException:
             pass
 
-    # =========================================================
+    # =====================================================
     # Pardon
-    # =========================================================
+    # =====================================================
 
     @commands.command(
         aliases=[
             # Add your custom aliases here.
-            # Example:
-            # "حبس",
-            # "احبس",
+            # "فك",
+            # "اعفو",
         ]
     )
     @commands.guild_only()
@@ -731,29 +955,40 @@ class Jail(commands.Cog):
 
         guild = ctx.guild
 
-        server_data = guilds_collection.find_one(
-            {"guild_id": str(guild.id)}
+        # -------------------------------------------------
+        # Server configuration
+        # -------------------------------------------------
+
+        server_data = await db_find_one(
+            guilds_collection,
+            {
+                "guild_id": str(guild.id)
+            }
         )
-        
+
         if not server_data:
             await ctx.message.reply(
                 "⚠️ The Prisoner role has not been configured yet.\n"
                 "Use `-set @Prisoner` first."
             )
             return
-            
-            prisoner_role = self.get_prisoner_role(guild, server_data)
-            
-            if not prisoner_role:
-                await ctx.message.reply(
-                    "⚠️ The Prisoner role has not been configured yet.\n"
-                    "Use `-set @Prisoner` first."
-                )
-                return
 
-        # =====================================================
-        # Pardon Everyone
-        # =====================================================
+        prisoner_role = self.get_prisoner_role(
+            guild,
+            server_data
+        )
+
+        if not prisoner_role:
+            await ctx.message.reply(
+                "⚠️ The configured Prisoner role no longer exists.\n"
+                "Please configure a new role using "
+                "`-set @Prisoner`."
+            )
+            return
+
+        # =================================================
+        # Pardon everyone
+        # =================================================
 
         if (
             member is None
@@ -764,7 +999,8 @@ class Jail(commands.Cog):
             ]
         ):
 
-            prisoners_data = collection.find(
+            prisoners_data = await db_find_many(
+                collection,
                 {
                     "guild_id": guild.id
                 }
@@ -774,16 +1010,38 @@ class Jail(commands.Cog):
 
             for prisoner in prisoners_data:
 
+                try:
+                    user_id = int(
+                        prisoner["user_id"]
+                    )
+                except (
+                    KeyError,
+                    TypeError,
+                    ValueError
+                ):
+                    continue
+
                 member_obj = guild.get_member(
-                    prisoner["user_id"]
+                    user_id
                 )
 
                 if not member_obj:
-                    continue
+                    try:
+                        member_obj = (
+                            await guild.fetch_member(
+                                user_id
+                            )
+                        )
+                    except (
+                        discord.NotFound,
+                        discord.HTTPException
+                    ):
+                        continue
 
                 released = await self.release_member(
                     member_obj,
-                    silent=True
+                    silent=True,
+                    force=True
                 )
 
                 if released:
@@ -794,8 +1052,8 @@ class Jail(commands.Cog):
             if pardoned_members:
 
                 mentions = ", ".join(
-                    member.mention
-                    for member in pardoned_members
+                    member_obj.mention
+                    for member_obj in pardoned_members
                 )
 
                 await ctx.message.reply(
@@ -811,12 +1069,13 @@ class Jail(commands.Cog):
 
             return
 
-        # =====================================================
-        # Find Target Member
-        # =====================================================
+        # =================================================
+        # Find target member
+        # =================================================
 
         member_id = None
 
+        # Mention
         if (
             member.startswith("<@")
             and member.endswith(">")
@@ -828,9 +1087,11 @@ class Jail(commands.Cog):
                 .replace(">", "")
             )
 
+        # ID
         elif member.isdigit():
             member_id = member
 
+        # Username / display name
         else:
             target = discord.utils.find(
                 lambda m:
@@ -848,17 +1109,28 @@ class Jail(commands.Cog):
                 )
                 return
 
-        # =====================================================
+        # =================================================
         # Convert ID to Member
-        # =====================================================
+        # =================================================
 
         if member_id:
 
-            member_obj = guild.get_member(
-                int(member_id)
-            )
+            try:
+                member_obj = guild.get_member(
+                    int(member_id)
+                )
 
-            if not member_obj:
+                if not member_obj:
+                    member_obj = (
+                        await guild.fetch_member(
+                            int(member_id)
+                        )
+                    )
+
+            except (
+                discord.NotFound,
+                discord.HTTPException
+            ):
                 await ctx.reply(
                     "❌ | Member not found."
                 )
@@ -866,9 +1138,17 @@ class Jail(commands.Cog):
 
             member = member_obj
 
-        # =====================================================
-        # Basic Validation
-        # =====================================================
+        # =================================================
+        # Basic validation
+        # =================================================
+
+        bot_member = guild.me
+
+        if bot_member is None:
+            await ctx.message.reply(
+                "❌ I could not get my member information."
+            )
+            return
 
         if member.id == ctx.author.id:
             await ctx.message.reply(
@@ -876,23 +1156,28 @@ class Jail(commands.Cog):
             )
             return
 
-        if member.top_role >= guild.me.top_role:
+        if member.top_role >= bot_member.top_role:
             await ctx.message.reply(
                 "❌ I cannot pardon this member because "
                 "their role is equal to or higher than mine."
             )
             return
 
-        # =====================================================
-        # Check Jail Record
-        # =====================================================
+        # =================================================
+        # Check jail record
+        # =================================================
 
-        data = collection.find_one(
+        data = await db_find_one(
+            collection,
             {
                 "user_id": member.id,
-                "guild_id": guild.id,
+                "guild_id": guild.id
             }
         )
+
+        # -------------------------------------------------
+        # No DB record
+        # -------------------------------------------------
 
         if not data:
 
@@ -900,14 +1185,23 @@ class Jail(commands.Cog):
 
                 await ctx.message.reply(
                     f"⚠️ {member.mention} has the prisoner role "
-                    "but not in the DB! Fixing..."
+                    "but no jail record was found in the DB! "
+                    "Fixing..."
                 )
 
-                # Remove prisoner role and leave all other
-                # existing roles untouched.
-                await member.remove_roles(
-                    prisoner_role
-                )
+                try:
+                    await member.remove_roles(
+                        prisoner_role
+                    )
+                except discord.Forbidden:
+                    await ctx.message.reply(
+                        "❌ I don't have permission to remove "
+                        "the Prisoner role."
+                    )
+                except discord.HTTPException as e:
+                    await ctx.message.reply(
+                        f"❌ Discord returned an error: `{e}`"
+                    )
 
             else:
                 await ctx.message.reply(
@@ -916,14 +1210,18 @@ class Jail(commands.Cog):
 
             return
 
-        # =====================================================
-        # Pardon
-        # =====================================================
+        # =================================================
+        # Force pardon
+        #
+        # force=True allows -عفو to work before the
+        # original release time.
+        # =================================================
 
         released = await self.release_member(
             member,
             silent=True,
-            expected_release_time=None
+            expected_release_time=None,
+            force=True
         )
 
         if not released:
@@ -937,9 +1235,9 @@ class Jail(commands.Cog):
         )
 
 
-# =============================================================
-# Extension Setup
-# =============================================================
+# =========================================================
+# Extension setup
+# =========================================================
 
 async def setup(bot):
     await bot.add_cog(Jail(bot))
