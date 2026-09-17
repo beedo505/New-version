@@ -389,10 +389,7 @@ class Setup(commands.Cog):
         guild_id = str(ctx.guild.id)
 
         if channel is None:
-            await ctx.message.reply(
-                "❌ You must mention a text channel or provide a valid channel."
-            )
-            return
+            channel = ctx.channel
 
         server_data = await asyncio.to_thread(
             settings_collection.find_one,
